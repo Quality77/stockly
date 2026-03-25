@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analyseur de Rémunérations</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d0f14; color: #e8eaf0; font-family: 'DM Mono', 'Courier New', monospace; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #1a1d25; }
+  ::-webkit-scrollbar-thumb { background: #2e3245; border-radius: 3px; }
+  .tab { background: none; border: none; color: #666; font-family: 'DM Mono', monospace; font-size: 0.8rem; cursor: pointer; padding: 0.5rem 1.2rem; border-bottom: 2px solid transparent; transition: all 0.2s; letter-spacing: 0.05em; text-transform: uppercase; }
+  .tab.active { color: #4ade80; border-bottom-color: #4ade80; }
+  .tab:hover:not(.active) { color: #aaa; }
+  .drop-zone { border: 1.5px dashed #2e3245; border-radius: 12px; padding: 3rem 2rem; text-align: center; cursor: pointer; transition: all 0.2s; }
+  .drop-zone:hover, .drop-zone.drag { border-color: #4ade80; background: #0f1a14; }
+  .select { background: #1a1d25; border: 1px solid #2e3245; border-radius: 6px; color: #e8eaf0; padding: 0.4rem 0.8rem; font-family: 'DM Mono', monospace; font-size: 0.78rem; outline: none; cursor: pointer; }
+  .select:focus { border-color: #4ade80; }
+  .bar { height: 6px; border-radius: 3px; transition: width 0.6s cubic-bezier(.34,1.56,.64,1); }
+  .card { background: #13161f; border: 1px solid #1e2130; border-radius: 10px; padding: 1.2rem 1.5rem; }
+  .tbl { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+  .tbl th { text-transform: uppercase; letter-spacing: 0.08em; color: #555; font-weight: 400; padding: 0.6rem 0.8rem; border-bottom: 1px solid #1e2130; text-align: left; }
+  .tbl td { padding: 0.55rem 0.8rem; border-bottom: 1px solid #111520; }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl tr:hover td { background: #161a24; }
+  .tbl-total td { background: #0d1117 !important; border-top: 1px solid #2e3245 !important; }
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 500; }
+  .btn { background: #4ade80; color: #0d0f14; border: none; padding: 0.5rem 1.2rem; border-radius: 6px; font-family: 'DM Mono', monospace; font-size: 0.78rem; cursor: pointer; font-weight: 500; letter-spacing: 0.05em; transition: opacity 0.2s; }
+  .btn:hover { opacity: 0.85; }
+  .btn-ghost { background: none; border: 1px solid #2e3245; color: #888; padding: 0.5rem 1.2rem; border-radius: 6px; font-family: 'DM Mono', monospace; font-size: 0.78rem; cursor: pointer; transition: all 0.2s; }
+  .btn-ghost:hover { border-color: #4ade80; color: #4ade80; }
+  .warn-box { background: #1a1208; border: 1px solid #fbbf2444; border-radius: 8px; padding: 0.8rem 1rem; font-size: 0.75rem; color: #fbbf24; margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useCallback } = React;
+
+const COLORS = ["#4ade80","#60a5fa","#f472b6","#fb923c","#a78bfa","#34d399","#fbbf24","#f87171","#38bdf8","#c084fc","#e879f9","#2dd4bf"];
+
+// Clés en minuscules trimmed pour matching souple (insensible casse + espaces)
+const RATES_RAW = {
+  "mg - nar - nxt tpt lvl 0": { label: "MG - NAR - Nxt Tpt lvl 0", rate: 0.15 },
+  "mg - up level lvl 0": { label: "MG - Up Level lvl 0", rate: 0.15 },
+  "mg - up level lvl 1": { label: "MG - Up Level lvl 1", rate: 0.15 },
+  "mg - nar - no mg lvl 0": { label: "MG - NAR - No mg lvl 0", rate: 0.15 },
+  "purchases submission": { label: "Purchases Submission", rate: 0.75 },
+  "invoice generation and transmission on retailer's bo": { label: "Invoice Generation and Transmission on retailer's BO", rate: 0.25 },
+  "register matching checks": { label: "Register Matching Checks", rate: 0.13 },
+  "purchase cancellation from stockly": { label: "Purchase cancellation from Stockly", rate: 0.15 },
+  "mg - nar - nxt tpt lvl 1": { label: "MG - NAR - Nxt Tpt lvl 1", rate: 0.15 },
+  "mg - sent on lvl 1": { label: "MG - Sent on lvl 1", rate: 0.65 },
+  "custom issue [supplier] creation": { label: "Custom issue [supplier] creation", rate: 0.15 },
+  "mg - sent on lvl 0": { label: "MG - Sent on lvl 0", rate: 0.30 },
+  "consumer invoice": { label: "Consumer Invoice", rate: 0.45 },
+  "mg - nar - no mg lvl 1": { label: "MG - NAR - No mg lvl 1", rate: 0.15 },
+  "tracking information snooze": { label: "Tracking Information Snooze", rate: 0.05 },
+  "tracking info registration": { label: "Tracking Info Registration", rate: 0.15 },
+  "return label generation": { label: "Return Label Generation", rate: 0.80 },
+  "transmit return ship labels manually": { label: "Transmit Return Ship Labels Manually", rate: 0.25 },
+  "at risk checks": { label: "At Risk checks", rate: 0.20 },
+  "refund": { label: "Refund", rate: 0.15 },
+  "register return labels snooze": { label: "Register Return Labels Snooze", rate: 0.10 },
+  "register parcel": { label: "Register Parcel", rate: 0.15 },
+  "mg - sent on lvl 1+": { label: "MG - Sent on lvl 1+", rate: 0.65 },
+  "mg - up level lvl 1+": { label: "MG - Up Level lvl 1+", rate: 0.15 },
+  "mg - nar - no mg lvl 1+": { label: "MG - NAR - No mg lvl 1+", rate: 0.15 },
+  "mtw closed by fl": { label: "MTW closed by FL", rate: 0.10 },
+};
+
+function normalize(s) {
+  return (s || "").trim().toLowerCase();
+}
+
+function getRate(raw) {
+  if (!raw) return null;
+  return RATES_RAW[normalize(raw)] ?? null;
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split("\n").map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return null;
+  const sep = [";", ",", "|", "\t"].find(s => lines[0].includes(s)) || ",";
+  const headers = lines[0].split(sep).map(h => h.trim().replace(/^"|"$/g, ""));
+  const rows = lines.slice(1).map(line => {
+    const cols = line.split(sep).map(c => c.trim().replace(/^"|"$/g, ""));
+    return Object.fromEntries(headers.map((h, i) => [h, cols[i] ?? ""]));
+  });
+  return { headers, rows };
+}
+
+function guessNameCol(headers) {
+  const keys = ["nom","name","personne","person","employe","employee","prenom","agent","user","username","login","operator","freelance"];
+  return headers.find(h => keys.some(k => h.toLowerCase().includes(k))) ?? headers[0];
+}
+
+function fmt(n) {
+  return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) + " €";
+}
+
+function App() {
+  const [data, setData] = useState(null);
+  const [headers, setHeaders] = useState([]);
+  const [nameCol, setNameCol] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const [activeTab, setActiveTab] = useState("persons");
+  const [filename, setFilename] = useState("");
+  const [unknownActions, setUnknownActions] = useState([]);
+
+  const processFile = (text, name) => {
+    const parsed = parseCSV(text);
+    if (!parsed) return;
+    setHeaders(parsed.headers);
+    setNameCol(guessNameCol(parsed.headers));
+    setData(parsed.rows);
+    setFilename(name || "");
+    const unknown = new Set();
+    parsed.rows.forEach(r => {
+      const act = r["ACTION_TYPE"];
+      if (act && !getRate(act)) unknown.add(act.trim());
+    });
+    setUnknownActions([...unknown]);
+  };
+
+  const onFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => processFile(e.target.result, file.name);
+    reader.readAsText(file, "utf-8");
+  };
+
+  const onDrop = useCallback((e) => {
+    e.preventDefault(); setDragging(false);
+    onFile(e.dataTransfer.files[0]);
+  }, []);
+
+  const stats = (() => {
+    if (!data || !nameCol) return null;
+    const byPerson = {}, byActivity = {}, matrix = {}, countPerson = {}, countActivity = {};
+    let total = 0, totalCount = 0;
+    for (const row of data) {
+      const name = row[nameCol] || "?";
+      const actRaw = row["ACTION_TYPE"] || "?";
+      const match = getRate(actRaw);
+      const rate = match ? match.rate : 0;
+      const actLabel = match ? match.label : actRaw.trim();
+      total += rate; totalCount++;
+      byPerson[name] = (byPerson[name] || 0) + rate;
+      countPerson[name] = (countPerson[name] || 0) + 1;
+      byActivity[actLabel] = (byActivity[actLabel] || 0) + rate;
+      countActivity[actLabel] = (countActivity[actLabel] || 0) + 1;
+      if (!matrix[name]) matrix[name] = {};
+      if (!matrix[name][actLabel]) matrix[name][actLabel] = { total: 0, count: 0 };
+      matrix[name][actLabel].total += rate;
+      matrix[name][actLabel].count += 1;
+    }
+    return { byPerson, byActivity, total, matrix, totalCount, countPerson, countActivity };
+  })();
+
+  const persons = stats ? Object.entries(stats.byPerson).sort((a,b) => b[1]-a[1]) : [];
+  const activities = stats ? Object.entries(stats.byActivity).sort((a,b) => b[1]-a[1]) : [];
+  const allActs = activities.map(([a]) => a);
+
+  const exportCSV = () => {
+    if (!stats) return;
+    let csv = "Personne;" + allActs.join(";") + ";TOTAL\n";
+    persons.forEach(([name, total]) => {
+      csv += name + ";" + allActs.map(a => (stats.matrix[name]?.[a]?.total ?? 0).toFixed(2)).join(";") + ";" + total.toFixed(2) + "\n";
+    });
+    csv += "TOTAL;" + allActs.map(a => (stats.byActivity[a] ?? 0).toFixed(2)).join(";") + ";" + stats.total.toFixed(2) + "\n";
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "remuneration_analyse.csv"; a.click();
+  };
+
+  return (
+    <div style={{ minHeight:"100vh", padding:"2rem" }}>
+      <div style={{ maxWidth:1100, margin:"0 auto" }}>
+        <div style={{ marginBottom:"2.5rem" }}>
+          <div style={{ display:"flex", alignItems:"baseline", gap:"0.8rem" }}>
+            <h1 style={{ fontFamily:"'Syne',sans-serif", fontSize:"1.8rem", fontWeight:800, letterSpacing:"-0.02em", color:"#fff" }}>Rémunération</h1>
+            <span style={{ color:"#4ade80", fontSize:"0.75rem", letterSpacing:"0.15em", textTransform:"uppercase" }}>CSV Analyzer</span>
+          </div>
+          <p style={{ color:"#555", fontSize:"0.78rem", marginTop:"0.4rem" }}>
+            Colonne activité : <span style={{ color:"#4ade80" }}>ACTION_TYPE</span> — tarifs fixes intégrés · matching insensible à la casse
+          </p>
+        </div>
+
+        {!data ? (
+          <div className={`drop-zone ${dragging?"drag":""}`}
+            onDrop={onDrop} onDragOver={(e)=>{e.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)}
+            onClick={()=>document.getElementById("csv-input").click()}>
+            <input id="csv-input" type="file" accept=".csv,.tsv,.txt" style={{display:"none"}} onChange={e=>onFile(e.target.files[0])} />
+            <div style={{fontSize:"2.5rem",marginBottom:"0.8rem"}}>📂</div>
+            <div style={{color:"#aaa",fontSize:"0.88rem"}}>Glisse ton fichier CSV ici ou <span style={{color:"#4ade80"}}>clique pour parcourir</span></div>
+            <div style={{color:"#444",fontSize:"0.72rem",marginTop:"0.5rem"}}>Le fichier doit contenir une colonne <strong style={{color:"#666"}}>ACTION_TYPE</strong></div>
+          </div>
+        ) : (
+          <>
+            <div className="card" style={{marginBottom:"1rem"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"1rem"}}>
+                <div style={{display:"flex",gap:"2rem",flexWrap:"wrap",alignItems:"flex-end"}}>
+                  <div style={{fontSize:"0.72rem",color:"#444"}}>📄 {filename} — {data.length} lignes</div>
+                  <label style={{display:"flex",flexDirection:"column",gap:"0.3rem"}}>
+                    <span style={{fontSize:"0.68rem",color:"#555",textTransform:"uppercase",letterSpacing:"0.08em"}}>👤 Colonne nom</span>
+                    <select className="select" value={nameCol} onChange={e=>setNameCol(e.target.value)}>
+                      {headers.map(h=><option key={h} value={h}>{h}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <div style={{display:"flex",gap:"0.6rem"}}>
+                  {stats && <button className="btn" onClick={exportCSV}>⬇ Exporter CSV</button>}
+                  <button className="btn-ghost" onClick={()=>{setData(null);setHeaders([]);}}>✕ Changer</button>
+                </div>
+              </div>
+            </div>
+
+            {unknownActions.length > 0 && (
+              <div className="warn-box">
+                ⚠ <strong>{unknownActions.length} activité(s) non reconnue(s)</strong> → rémunération = 0 € :<br/>
+                <span style={{color:"#f87171"}}>{unknownActions.join(" · ")}</span>
+              </div>
+            )}
+
+            {stats && (
+              <>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"1rem",marginBottom:"1.5rem"}}>
+                  {[["Total rémunérations",fmt(stats.total),"#4ade80"],["Actions traitées",stats.totalCount,"#60a5fa"],["Personnes",persons.length,"#f472b6"],["Types d'activité",activities.length,"#fb923c"]].map(([label,val,color])=>(
+                    <div key={label} className="card" style={{borderColor:color+"33"}}>
+                      <div style={{fontSize:"0.68rem",color:"#555",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.4rem"}}>{label}</div>
+                      <div style={{fontSize:"1.4rem",fontWeight:700,color,fontFamily:"'Syne',sans-serif"}}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{borderBottom:"1px solid #1e2130",marginBottom:"1.5rem",display:"flex"}}>
+                  {[["persons","👤 Par personne"],["activities","🏷️ Par activité"],["matrix","🔲 Tableau croisé"],["rates","📋 Grille tarifaire"]].map(([id,label])=>(
+                    <button key={id} className={`tab ${activeTab===id?"active":""}`} onClick={()=>setActiveTab(id)}>{label}</button>
+                  ))}
+                </div>
+
+                {activeTab==="persons" && (
+                  <div className="card">
+                    <table className="tbl">
+                      <thead><tr><th>Personne</th><th style={{textAlign:"right"}}>Actions</th><th>Répartition</th><th style={{textAlign:"right"}}>Total</th><th style={{textAlign:"right"}}>Part</th></tr></thead>
+                      <tbody>
+                        {persons.map(([name,amt],i)=>{
+                          const pct=(amt/stats.total*100).toFixed(1);
+                          return (<tr key={name}>
+                            <td><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:COLORS[i%COLORS.length],marginRight:8}}/>{name}</td>
+                            <td style={{textAlign:"right",color:"#555"}}>{stats.countPerson[name]}</td>
+                            <td style={{width:160}}><div style={{background:"#1a1d25",borderRadius:3,overflow:"hidden"}}><div className="bar" style={{width:`${pct}%`,background:COLORS[i%COLORS.length]+"bb"}}/></div></td>
+                            <td style={{textAlign:"right",color:"#4ade80",fontWeight:600}}>{fmt(amt)}</td>
+                            <td style={{textAlign:"right",color:"#555"}}>{pct}%</td>
+                          </tr>);
+                        })}
+                        <tr className="tbl-total"><td colSpan={2} style={{color:"#888",fontWeight:600}}>TOTAL</td><td></td><td style={{textAlign:"right",color:"#fff",fontWeight:700}}>{fmt(stats.total)}</td><td style={{textAlign:"right",color:"#555"}}>100%</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {activeTab==="activities" && (
+                  <div className="card">
+                    <table className="tbl">
+                      <thead><tr><th>Activité</th><th style={{textAlign:"right"}}>Tarif</th><th style={{textAlign:"right"}}>Occurrences</th><th>Répartition</th><th style={{textAlign:"right"}}>Total</th></tr></thead>
+                      <tbody>
+                        {activities.map(([act,amt],i)=>{
+                          const match=getRate(act); const pct=(amt/stats.total*100).toFixed(1);
+                          return (<tr key={act}>
+                            <td><span className="badge" style={{background:COLORS[i%COLORS.length]+"22",color:COLORS[i%COLORS.length]}}>{act}</span>{!match&&<span style={{color:"#f87171",fontSize:"0.65rem",marginLeft:6}}>⚠ inconnu</span>}</td>
+                            <td style={{textAlign:"right",color:"#555"}}>{match?match.rate.toFixed(2)+" €":"—"}</td>
+                            <td style={{textAlign:"right",color:"#60a5fa"}}>{stats.countActivity[act]}</td>
+                            <td style={{width:160}}><div style={{background:"#1a1d25",borderRadius:3,overflow:"hidden"}}><div className="bar" style={{width:`${pct}%`,background:COLORS[i%COLORS.length]+"bb"}}/></div></td>
+                            <td style={{textAlign:"right",color:"#60a5fa",fontWeight:600}}>{fmt(amt)}</td>
+                          </tr>);
+                        })}
+                        <tr className="tbl-total"><td colSpan={3} style={{color:"#888",fontWeight:600}}>TOTAL</td><td></td><td style={{textAlign:"right",color:"#fff",fontWeight:700}}>{fmt(stats.total)}</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {activeTab==="matrix" && (
+                  <div className="card" style={{overflowX:"auto"}}>
+                    <table className="tbl">
+                      <thead><tr>
+                        <th style={{minWidth:120}}>Personne</th>
+                        {allActs.map((a,i)=><th key={a} style={{textAlign:"right",color:COLORS[i%COLORS.length],minWidth:90,fontSize:"0.68rem"}}>{a}</th>)}
+                        <th style={{textAlign:"right",color:"#4ade80",minWidth:90}}>TOTAL</th>
+                      </tr></thead>
+                      <tbody>
+                        {persons.map(([name,total],pi)=>(
+                          <tr key={name}>
+                            <td><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:COLORS[pi%COLORS.length],marginRight:8}}/>{name}</td>
+                            {allActs.map((act,ai)=>{const cell=stats.matrix[name]?.[act];return(<td key={act} style={{textAlign:"right",color:cell?COLORS[ai%COLORS.length]:"#2a2d38"}}>{cell?<span title={`${cell.count} action(s)`}>{fmt(cell.total)}<br/><span style={{fontSize:"0.65rem",color:"#555"}}>×{cell.count}</span></span>:"—"}</td>);})}
+                            <td style={{textAlign:"right",color:"#4ade80",fontWeight:700}}>{fmt(total)}</td>
+                          </tr>
+                        ))}
+                        <tr className="tbl-total">
+                          <td style={{color:"#888",fontWeight:600}}>TOTAL</td>
+                          {allActs.map((act,ai)=><td key={act} style={{textAlign:"right",color:COLORS[ai%COLORS.length],fontWeight:600}}>{fmt(stats.byActivity[act])}</td>)}
+                          <td style={{textAlign:"right",color:"#fff",fontWeight:700}}>{fmt(stats.total)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {activeTab==="rates" && (
+                  <div className="card">
+                    <div style={{color:"#555",fontSize:"0.72rem",marginBottom:"1rem"}}>Tarifs fixes — matching insensible à la casse et aux espaces</div>
+                    <table className="tbl">
+                      <thead><tr><th>ACTION_TYPE</th><th style={{textAlign:"right"}}>Tarif unitaire</th><th style={{textAlign:"right"}}>Présent dans ce fichier</th></tr></thead>
+                      <tbody>
+                        {Object.values(RATES_RAW).map(({label,rate},i)=>{
+                          const present=stats&&label in stats.byActivity;
+                          return(<tr key={label}>
+                            <td><span className="badge" style={{background:COLORS[i%COLORS.length]+"22",color:COLORS[i%COLORS.length]}}>{label}</span></td>
+                            <td style={{textAlign:"right",color:"#fbbf24",fontWeight:500}}>{rate.toFixed(2)} €</td>
+                            <td style={{textAlign:"right"}}>{present?<span style={{color:"#4ade80"}}>✓ {stats.countActivity[label]} fois</span>:<span style={{color:"#2e3245"}}>—</span>}</td>
+                          </tr>);
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
